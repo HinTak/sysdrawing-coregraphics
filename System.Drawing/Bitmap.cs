@@ -76,7 +76,7 @@ namespace System.Drawing {
 
 		private CGDataProvider dataProvider;
 
-		public Bitmap (string filename)
+		public Bitmap (string filename, bool useIcm)
 		{
 			if (filename == null)
 				throw new ArgumentNullException ("Value can not be null");
@@ -94,9 +94,13 @@ namespace System.Drawing {
 			{
 				throw new FileNotFoundException ("File {0} not found.", filename);
 			}
-
-
 		}
+
+        	public Bitmap(string filename) : this(filename, false) { }
+
+
+		public Bitmap(Stream stream) : this(stream, false) { }
+
 
 		public Bitmap (Stream stream, bool useIcm)
 		{
@@ -127,9 +131,9 @@ namespace System.Drawing {
 		/// <summary>
 		/// Initializes a new instance of the <see cref="System.Drawing.Bitmap"/> class from the specified existing image..
 		/// </summary>
-		/// <param name="image">Image.</param>
-		public Bitmap (Image image) :
-			this (image, image.Width, image.Height)
+		/// <param name="original">Image.</param>
+       		public Bitmap (Image original) :
+			this (original, original.Width, original.Height)
 		{
 
 		}
@@ -150,7 +154,11 @@ namespace System.Drawing {
 			}
 		}
 
-		public Bitmap (int width, int height, PixelFormat format)
+	        public Bitmap(int width, int height, PixelFormat format) : this(width, height, format, IntPtr.Zero)
+	        {
+	        }
+
+		public Bitmap (int width, int height, PixelFormat format, IntPtr scan0)
 		{
 			imageTransform = new CGAffineTransform(1, 0, 0, -1, 0, height);
 
@@ -199,16 +207,26 @@ namespace System.Drawing {
 			bytesPerRow = width * bitsPerPixel/bitsPerComponent;
 			int size = bytesPerRow * height;
 
-			bitmapBlock = Marshal.AllocHGlobal (size);
-			var bitmap = new CGBitmapContext (bitmapBlock, 
-			                              width, height, 
-			                              bitsPerComponent, 
-			                              bytesPerRow,
-			                              colorSpace,
-			                              bitmapInfo);
-			// This works for now but we need to look into initializing the memory area itself
-			// TODO: Look at what we should do if the image does not have alpha channel
-			bitmap.ClearRect (new CGRect (0,0,width,height));
+            		bitmapBlock = Marshal.AllocHGlobal (size);
+			if (scan0 != IntPtr.Zero) {
+				unsafe
+				{
+					Buffer.MemoryCopy ((void*)scan0, (void*)bitmapBlock, size, size);
+				}
+			}
+
+			var bitmap = new CGBitmapContext (bitmapBlock,
+						      width, height,
+						      bitsPerComponent,
+						      bytesPerRow,
+						      colorSpace,
+						      bitmapInfo);
+
+			if (scan0 == IntPtr.Zero) {
+				// This works for now but we need to look into initializing the memory area itself
+				// TODO: Look at what we should do if the image does not have alpha channel
+				bitmap.ClearRect (new CGRect (0, 0, width, height));
+			}
 
 			var provider = new CGDataProvider (bitmapBlock, size, true);
 			NativeCGImage = new CGImage (width, height, bitsPerComponent, bitsPerPixel, bytesPerRow, colorSpace, bitmapInfo, provider, null, false, CGColorRenderingIntent.Default);
@@ -854,8 +872,8 @@ namespace System.Drawing {
 		/// Creates a copy of the section of this Bitmap defined by Rectangle structure and with a specified PixelFormat enumeration.
 		/// </summary>
 		/// <param name="rect">Rect.</param>
-		/// <param name="pixelFormat">Pixel format.</param>
-		public Bitmap Clone (Rectangle rect, PixelFormat pixelFormat)
+		/// <param name="format">Pixel format.</param>
+       		public Bitmap Clone (Rectangle rect, PixelFormat format)
 		{
 			if (rect.Width == 0 || rect.Height == 0)
 				throw new ArgumentException ("Width or Height of rect is 0.");
@@ -863,7 +881,7 @@ namespace System.Drawing {
 			var width = rect.Width;
 			var height = rect.Height;
 
-			var tmpImg = new Bitmap (width, height, pixelFormat);
+			var tmpImg = new Bitmap (width, height, format);
 
 			using (Graphics g = Graphics.FromImage (tmpImg)) {
 				g.DrawImage (this, new Rectangle(0,0, width, height), rect, GraphicsUnit.Pixel );
@@ -1066,9 +1084,9 @@ namespace System.Drawing {
 		}
 
 
-		public void Save (string path, ImageFormat format)
+        public void Save (string filename, ImageFormat format)
 		{
-			if (path == null)
+			if (filename == null)
 				throw new ArgumentNullException ("path");
 			
 			if (NativeCGImage == null)
@@ -1108,7 +1126,7 @@ namespace System.Drawing {
 				throw new NotImplementedException("ImageFormat.MemoryBmp not supported");
 
 			// Obtain a URL file path to be passed
-			NSUrl url = NSUrl.FromFilename(path);
+			NSUrl url = NSUrl.FromFilename(filename);
 
 			// * NOTE * we only support one image for right now.
 
@@ -1129,22 +1147,22 @@ namespace System.Drawing {
 
 		}
 
-		public void Save (string path)
+        	public void Save (string filename)
 		{
-			if (path == null)
+			if (filename == null)
 				throw new ArgumentNullException ("path");
 			var format = ImageFormat.Png;
 			
-			var p = path.LastIndexOf (".");
-			if (p != -1 && p < path.Length){
-				switch (path.Substring (p + 1)){
+			var p = filename.LastIndexOf (".");
+			if (p != -1 && p < filename.Length){
+				switch (filename.Substring (p + 1)){
 				case "png": break;
 				case "jpg": format = ImageFormat.Jpeg; break;
 				case "tiff": format = ImageFormat.Tiff; break;
 				case "bmp": format = ImageFormat.Bmp; break;
 				}
 			}
-			Save (path, format);
+			Save (filename, format);
 		}
 
 		public void Save (Stream stream, ImageFormat format)
@@ -1198,7 +1216,7 @@ namespace System.Drawing {
 			}
 		}
 
-		public BitmapData LockBits (RectangleF rect, ImageLockMode flags, PixelFormat pixelFormat)
+     		public BitmapData LockBits (RectangleF rect, ImageLockMode flags, PixelFormat format)
 		{
 
 			BitmapData bitmapData = new BitmapData ();
@@ -1209,7 +1227,7 @@ namespace System.Drawing {
 			// Calculate our strides
 			int srcStride = (int)((int)rect.Width * (NativeCGImage.BitsPerPixel / NativeCGImage.BitsPerComponent));
 
-			int numOfComponents = GetPixelFormatComponents(pixelFormat);
+			int numOfComponents = GetPixelFormatComponents(format);
 			int stride = (int)rect.Width * numOfComponents;
 
 			// Calculate our lengths
@@ -1247,7 +1265,7 @@ namespace System.Drawing {
 			{
 				bitmapData.Height = (int)rect.Height;
 				bitmapData.Width = (int)rect.Width;
-				bitmapData.PixelFormat = pixelFormat;
+				bitmapData.PixelFormat = format;
 
 				bitmapData.Stride = stride;
 			}
@@ -1273,7 +1291,7 @@ namespace System.Drawing {
 
 		ImageLockMode bitsLockMode = 0;
 
-		public void UnlockBits (BitmapData data)
+        	public void UnlockBits (BitmapData bitmapdata)
 		{
 
 			if (bitsLockMode == ImageLockMode.ReadOnly)
@@ -1284,21 +1302,21 @@ namespace System.Drawing {
 			}
 
 			//int destStride = data.Width * (NativeCGImage.BitsPerPixel / NativeCGImage.BitsPerComponent);
-			int destStride = data.Stride;
+			int destStride = bitmapdata.Stride;
 
 			// Declare our size 
 			var scanLength  = destStride * Height;
 
 			// This is fine here for now until we support other formats but right now it is RGBA
-			var pixelSize = GetPixelFormatComponents (data.PixelFormat);
+			var pixelSize = GetPixelFormatComponents (bitmapdata.PixelFormat);
 
 			if (pixelSize == 4)
-				Convert_BGRA_8888_To_P_RGBA_8888 (data.Scan0, bitmapBlock, scanLength);
+				Convert_BGRA_8888_To_P_RGBA_8888 (bitmapdata.Scan0, bitmapBlock, scanLength);
 			else
-				Convert_BGR_888_To_P_RGBA_8888 (data.Scan0, bitmapBlock, scanLength);
+				Convert_BGR_888_To_P_RGBA_8888 (bitmapdata.Scan0, bitmapBlock, scanLength);
 
 			// Create a bitmap context from the pixel data
-			var bitmapContext = CreateCompatibleBitmapContext (data.Width, data.Height, data.PixelFormat, bitmapBlock);
+			var bitmapContext = CreateCompatibleBitmapContext (bitmapdata.Width, bitmapdata.Height, bitmapdata.PixelFormat, bitmapBlock);
 
 			// Dispose of the prevous image that is allocated.
 			NativeCGImage.Dispose ();
