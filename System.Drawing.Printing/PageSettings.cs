@@ -6,6 +6,8 @@
 //   Herve Poussineau (hpoussineau@fr.st)
 //   Andreas Nahr (ClassDevelopment@A-SoftTech.com)
 //   Sebastien Pouliot  <sebastien@xamarin.com>
+//   Filip Navara <filip.navara@gmail.com>
+//   Jiri Volejnik <aconcagua21@volny.cz>
 //
 // Copyright (C) 2004 Novell, Inc (http://www.novell.com)
 // Copyright 2011-2013 Xamarin Inc.
@@ -30,22 +32,63 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-namespace System.Drawing.Printing {
-	
-	public class PageSettings : ICloneable {
+using System.Diagnostics;
+using System.Reflection;
+using System.Drawing.Mac;
+using CoreGraphics;
+
+namespace System.Drawing.Printing
+{
+
+	public partial class PageSettings : ICloneable
+	{
+		PaperSize paper_size;
 
 		public PageSettings ()
+			: this (new PrinterSettings ())
 		{
 		}
 
-		
-		public bool Landscape { get; set; }
+		public float HardMarginX { get; protected set; }
 
-		
-		public object Clone ()
+		public float HardMarginY { get; protected set; }
+
+		public bool Color { get; set; }
+
+		public PrinterSettings PrinterSettings { get; set; }
+
+		public PaperSource PaperSource { get; set; }
+
+		public RectangleF PrintableArea {
+			get {
+				// FIXME
+				NotImplemented (MethodBase.GetCurrentMethod ());
+				return RectangleF.Empty;
+			}
+		}
+
+		public PrinterResolution PrinterResolution { get; set; }
+
+		public void CopyToHdevmode (IntPtr hdevmode)
 		{
 			// FIXME
-			return new PageSettings ();
+			NotImplemented (MethodBase.GetCurrentMethod ());
+		}
+
+		public void SetHdevmode (IntPtr hdevmode)
+		{
+			// FIXME
+			NotImplemented (MethodBase.GetCurrentMethod ());
+		}
+
+		public object Clone ()
+		{
+			return new PageSettings (this);
+		}
+
+		internal static void NotImplemented (MethodBase method)
+		{
+			Debug.WriteLine ("Not Implemented: " + method.ReflectedType.Name + "." + method.Name);
 		}
 	}
 }

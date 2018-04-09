@@ -33,46 +33,37 @@
 
 using System.Drawing.Drawing2D;
 using System.Collections.Generic;
-
-#if MONOMAC
-using CoreGraphics;
-#else
-using CoreGraphics;
-#endif
+using System.Reflection;
 
 // Polygon Clipping Library
 using ClipperLib;
-
+using CoreGraphics;
 
 namespace System.Drawing 
 {
-
 	// Clipper lib definitions
 	using Path = List<IntPoint>;
 	using Paths = List<List<IntPoint>>;
 
 	public sealed class Region : MarshalByRefObject, IDisposable 
 	{
-
 		const PolyFillType SUBJ_FILL_TYPE = PolyFillType.pftNonZero;
 		const PolyFillType CLIP_FILL_TYPE = PolyFillType.pftNonZero;
 		const bool EVEN_ODD_FILL = false;
 
-		internal static RectangleF infinite = new RectangleF(-4194304, -4194304, 8388608, 8388608);
+		internal static CGRect infinite = new CGRect(-4194304, -4194304, 8388608, 8388608);
 		internal object regionObject; 
 		internal List<RegionEntry> regionList = new List<RegionEntry>();
 		internal CGPath regionPath;
-		internal RectangleF regionBounds;
-
+		internal CGRect regionBounds;
 
 		//Here we are scaling all coordinates up by 100 when they're passed to Clipper 
 		//via Polygon (or Polygons) objects because Clipper no longer accepts floating  
 		//point values. Likewise when Clipper returns a solution in a Polygons object, 
 		//we need to scale down these returned values by the same amount before displaying.
-		private static float scale = 10000; //or 1 or 10 or 10000 etc for lesser or greater precision.
+		static float scale = 10000; //or 1 or 10 or 10000 etc for lesser or greater precision.
 
 		internal Paths solution = new Paths();
-
 
 		internal struct RegionEntry
 		{
@@ -147,7 +138,7 @@ namespace System.Drawing
 			// We set the default region to a very large 
 			regionObject = infinite;
 
-			var path = RectangleToPath (infinite);
+			var path = RectangleToPath (infinite.ToRectangleF ());
 			solution.Add (path);
 
 			regionList.Add (new RegionEntry (RegionType.Infinity, infinite, path));
@@ -192,7 +183,19 @@ namespace System.Drawing
 			var flatPath = PointFArrayToIntArray (clonePath.PathPoints, scale);
 			solution.Add (flatPath);
 			regionList.Add (new RegionEntry (RegionType.Path, clonePath, flatPath));
-			regionBounds = regionPath.BoundingBox.ToRectangleF ();
+			regionBounds = regionPath.BoundingBox;
+		}
+
+		public IntPtr GetHrgn (Graphics g)
+		{
+		        NotImplemented (MethodBase.GetCurrentMethod());
+		        return IntPtr.Zero;
+		}
+		
+		public static Region FromHrgn (IntPtr hrgn)
+		{
+		        NotImplemented (MethodBase.GetCurrentMethod());
+		        return null;
 		}
 
 		internal static Path PointFArrayToIntArray(PointF[] points, float scale)
@@ -219,7 +222,7 @@ namespace System.Drawing
 
 		void PlotPath (GraphicsPath path)
 		{
-			float x1 = 0, y1 = 0, x2 = 0, y2 = 0, x3 = 0, y3 = 0;
+			nfloat x1 = 0, y1 = 0, x2 = 0, y2 = 0, x3 = 0, y3 = 0;
 			var points = path.PathPoints;
 			var types = path.PathTypes;
 			int bidx = 0;
@@ -279,21 +282,59 @@ namespace System.Drawing
 			if (g == null)
 				throw new ArgumentNullException ("g");
 
-			throw new NotImplementedException ();
+			NotImplemented (MethodBase.GetCurrentMethod ());
+			return ReferenceEquals (this, region);
 		}
-		
+
+		internal Region (Region region)
+		{
+			solution = Copy (region.solution);
+			regionPath = new CGPath (region.regionPath);
+			regionList = Copy (region.regionList);
+			regionBounds = region.regionBounds;
+			regionObject = CopyRegionObject (region.regionObject);			
+		}
+
 		public Region Clone ()
 		{
+			return new Region (this);
+		}
 
+		internal static Paths Copy (Paths src)
+		{
+			var dst = new Paths (src.Capacity);
+			foreach (var path in src)
+				dst.Add (new Path (path));
+			return dst;
+		}
 
-			var region = new Region ();
-			region.solution = this.solution;
-			region.regionPath = this.regionPath;
-			region.regionList = this.regionList;
-			region.regionObject = this.regionObject;
-			region.regionBounds = this.regionBounds;
-
-			return region;
+		internal static List<RegionEntry> Copy (List<RegionEntry> src)
+		{
+			var dst = new List<RegionEntry> (src.Capacity);
+		        foreach (var r in src)
+		                dst.Add(new RegionEntry
+		                {
+		                        regionType = r.regionType,
+		                        regionClipType = r.regionClipType,
+		                        regionPath = Copy (r.regionPath),
+		                        regionObject = CopyRegionObject (r.regionObject)
+		                });
+		        return dst;
+		}
+		
+		internal static object CopyRegionObject (object src)
+		{
+		        if (src is CGRect rect)
+		                return rect;
+		        if (src is CGPath path)
+		                return new CGPath (path);
+		        if (src is RectangleF rectf)
+		                return rectf;
+		        if (src is GraphicsPath graphicsPath)
+		                return graphicsPath.Clone(); 
+		
+		        Console.WriteLine($"Unexpected type of regionObject ({src.GetType().Name})");
+		        return src;
 		}
 
 		public void Dispose ()
@@ -310,7 +351,8 @@ namespace System.Drawing
 		{
 			if (g == null)
 				throw new ArgumentNullException ();
-			throw new NotImplementedException ();
+			NotImplemented (MethodBase.GetCurrentMethod ());
+			return GetBounds ();
 		}
 
 //		public bool IsInfinite(Graphics g)
@@ -321,7 +363,7 @@ namespace System.Drawing
 		{
 			regionObject = infinite;
 
-			var path = RectangleToPath (infinite);
+			var path = RectangleToPath (infinite.ToRectangleF ());
 
 			// clear out our containers.
 			regionList.Clear ();
@@ -359,7 +401,7 @@ namespace System.Drawing
 
 		public void Transform(Matrix matrix)
 		{
-			if (!IsEmpty && !IsInfinite) 
+			if (!regionPath.IsEmpty && !regionBounds.Equals (infinite))
 			{
 				foreach (var path in solution) 
 				{
@@ -380,7 +422,7 @@ namespace System.Drawing
 		/// Transform the specified Rectangle by the matrix that is passed.
 		/// </summary>
 		/// <param name="matrix">Matrix.</param>
-		private static void TransformIntPoint (ref IntPoint point, Matrix matrix) 
+		static void TransformIntPoint (ref IntPoint point, Matrix matrix) 
 		{
 			var transform = matrix.transform;
 			var x = point.X / scale;
@@ -404,170 +446,170 @@ namespace System.Drawing
 			Transform (translateMatrix);
 		}
 
-        /// <summary>
-        /// Updates this Region to the intersection of itself with the specified Rectangle structure.
-        /// </summary>
-        /// <param name="rect">Rect.</param>
-		public void Intersect(Rectangle rect)
+		/// <summary>
+		/// Updates this Region to the intersection of itself with the specified Rectangle structure.
+		/// </summary>
+		/// <param name="rect">Rect.</param>
+		public void Intersect (Rectangle rect)
 		{
 			Intersect ((RectangleF)rect);
 		}
 
-        /// <summary>
-        /// Updates this Region to the intersection of itself with the specified RectangleF structure.
-        /// </summary>
-        /// <param name="rect">Rect.</param>
-		public void Intersect(RectangleF rect)
+		/// <summary>
+		/// Updates this Region to the intersection of itself with the specified RectangleF structure.
+		/// </summary>
+		/// <param name="rect">Rect.</param>
+		public void Intersect (RectangleF rect)
 		{
 
-			regionList.Add(new RegionEntry(RegionType.Rectangle, rect, RectangleToPath(rect), RegionClipType.Intersection));
+			regionList.Add (new RegionEntry (RegionType.Rectangle, rect, RectangleToPath (rect), RegionClipType.Intersection));
 			calculateRegionPath (ClipType.ctIntersection);
 		}
 
-        /// <summary>
-        /// Updates this Region to the intersection of itself with the specified Region.
-        /// </summary>
-        /// <param name="region">Region.</param>
-		public void Intersect(Region region)
+		/// <summary>
+		/// Updates this Region to the intersection of itself with the specified Region.
+		/// </summary>
+		/// <param name="region">Region.</param>
+		public void Intersect (Region region)
 		{
 
-			regionList.Add(new RegionEntry(RegionType.Path, region.solution, region.solution, RegionClipType.Intersection));
+			regionList.Add (new RegionEntry (RegionType.Path, region.solution, region.solution, RegionClipType.Intersection));
 			calculateRegionPath (ClipType.ctIntersection);
 		}
 
-        /// <summary>
-        /// Updates this Region to the intersection of itself with the specified GraphicsPath.
-        /// </summary>
-        /// <param name="path">Path.</param>
-        public void Intersect(GraphicsPath path)
-        {
-            var region = new Region(path);
-            Intersect(region);
-            region.Dispose();
-        }
+		/// <summary>
+		/// Updates this Region to the intersection of itself with the specified GraphicsPath.
+		/// </summary>
+		/// <param name="path">Path.</param>
+		public void Intersect (GraphicsPath path)
+		{
+			var region = new Region (path);
+			Intersect (region);
+			region.Dispose ();
+		}
 
-        /// <summary>
-        /// Updates this Region to the union of itself and the specified Rectangle structure.
-        /// </summary>
-        /// <param name="rect">Rect.</param>
-		public void Union(Rectangle rect)
+		/// <summary>
+		/// Updates this Region to the union of itself and the specified Rectangle structure.
+		/// </summary>
+		/// <param name="rect">Rect.</param>
+		public void Union (Rectangle rect)
 		{
 			Union ((RectangleF)rect);
 		}
 
-        /// <summary>
-        /// Updates this Region to the union of itself and the specified RectangleF structure.
-        /// </summary>
-        /// <param name="rect">Rect.</param>
-		public void Union(RectangleF rect)
+		/// <summary>
+		/// Updates this Region to the union of itself and the specified RectangleF structure.
+		/// </summary>
+		/// <param name="rect">Rect.</param>
+		public void Union (RectangleF rect)
 		{
-			regionList.Add(new RegionEntry(RegionType.Rectangle, rect, RectangleToPath(rect), RegionClipType.Union));
+			regionList.Add (new RegionEntry (RegionType.Rectangle, rect, RectangleToPath (rect), RegionClipType.Union));
 			calculateRegionPath (ClipType.ctUnion);
 		}
 
-        /// <summary>
-        /// Updates this Region to the union of itself and the specified Region.
-        /// </summary>
-        /// <param name="region">Region.</param>
-		public void Union(Region region)
+		/// <summary>
+		/// Updates this Region to the union of itself and the specified Region.
+		/// </summary>
+		/// <param name="region">Region.</param>
+		public void Union (Region region)
 		{
 
-			regionList.Add(new RegionEntry(RegionType.Path, region.solution, region.solution, RegionClipType.Union));
+			regionList.Add (new RegionEntry (RegionType.Path, region.solution, region.solution, RegionClipType.Union));
 			calculateRegionPath (ClipType.ctUnion);
 		}
 
-        /// <summary>
-        /// Updates this Region to the union of itself and the specified GraphicsPath.
-        /// </summary>
-        /// <param name="path">Path.</param>
-        public void Union(GraphicsPath path)
-        {
-            var region = new Region(path);
-            Union(region);
-            region.Dispose();
-        }
+		/// <summary>
+		/// Updates this Region to the union of itself and the specified GraphicsPath.
+		/// </summary>
+		/// <param name="path">Path.</param>
+		public void Union (GraphicsPath path)
+		{
+			var region = new Region (path);
+			Union (region);
+			region.Dispose ();
+		}
 
-        /// <summary>
-        /// Updates this Region to the union minus the intersection of itself with the specified Rectangle structure.
-        /// </summary>
-        /// <param name="rect">Rect.</param>
-		public void Xor(Rectangle rect)
+		/// <summary>
+		/// Updates this Region to the union minus the intersection of itself with the specified Rectangle structure.
+		/// </summary>
+		/// <param name="rect">Rect.</param>
+		public void Xor (Rectangle rect)
 		{
 			Xor ((RectangleF)rect);
 		}
 
-        /// <summary>
-        /// Updates this Region to the union minus the intersection of itself with the specified RectangleF structure.
-        /// </summary>
-        /// <param name="rect">Rect.</param>
-		public void Xor(RectangleF rect)
+		/// <summary>
+		/// Updates this Region to the union minus the intersection of itself with the specified RectangleF structure.
+		/// </summary>
+		/// <param name="rect">Rect.</param>
+		public void Xor (RectangleF rect)
 		{
-			regionList.Add(new RegionEntry(RegionType.Rectangle, rect, RectangleToPath(rect), RegionClipType.Xor));
+			regionList.Add (new RegionEntry (RegionType.Rectangle, rect, RectangleToPath (rect), RegionClipType.Xor));
 			calculateRegionPath (ClipType.ctXor);
 		}
 
-        /// <summary>
-        /// Updates this Region to the union minus the intersection of itself with the specified Region.
-        /// </summary>
-        /// <param name="region">Region.</param>
-		public void Xor(Region region)
+		/// <summary>
+		/// Updates this Region to the union minus the intersection of itself with the specified Region.
+		/// </summary>
+		/// <param name="region">Region.</param>
+		public void Xor (Region region)
 		{
 
-			regionList.Add(new RegionEntry(RegionType.Path, region.solution, region.solution, RegionClipType.Xor));
+			regionList.Add (new RegionEntry (RegionType.Path, region.solution, region.solution, RegionClipType.Xor));
 			calculateRegionPath (ClipType.ctXor);
 		}
 
-        /// <summary>
-        /// Updates this Region to the union minus the intersection of itself with the specified GraphicsPath.
-        /// </summary>
-        /// <param name="path">Path.</param>
-        public void Xor(GraphicsPath path)
-        {
-            var region = new Region(path);
-            Xor(region) ;
-            region.Dispose();
-        }
+		/// <summary>
+		/// Updates this Region to the union minus the intersection of itself with the specified GraphicsPath.
+		/// </summary>
+		/// <param name="path">Path.</param>
+		public void Xor (GraphicsPath path)
+		{
+			var region = new Region (path);
+			Xor (region);
+			region.Dispose ();
+		}
 
-        /// <summary>
-        /// Updates this Region to contain only the portion of its interior that does not intersect with the specified Rectangle structure.
-        /// </summary>
-        /// <param name="rect">Rect.</param>
-        public void Exclude(Rectangle rect)
+		/// <summary>
+		/// Updates this Region to contain only the portion of its interior that does not intersect with the specified Rectangle structure.
+		/// </summary>
+		/// <param name="rect">Rect.</param>
+		public void Exclude (Rectangle rect)
 		{
 			Exclude ((RectangleF)rect);
 		}
 
-        /// <summary>
-        /// Updates this Region to contain only the portion of its interior that does not intersect with the specified RectangleF structure.
-        /// </summary>
-        /// <param name="rect">Rect.</param>
-		public void Exclude(RectangleF rect)
+		/// <summary>
+		/// Updates this Region to contain only the portion of its interior that does not intersect with the specified RectangleF structure.
+		/// </summary>
+		/// <param name="rect">Rect.</param>
+		public void Exclude (RectangleF rect)
 		{
-			regionList.Add(new RegionEntry(RegionType.Rectangle, rect, RectangleToPath(rect), RegionClipType.Difference));
+			regionList.Add (new RegionEntry (RegionType.Rectangle, rect, RectangleToPath (rect), RegionClipType.Difference));
 			calculateRegionPath (ClipType.ctDifference);
 		}
 
-        /// <summary>
-        /// Updates this Region to contain only the portion of its interior that does not intersect with the specified Region.
-        /// </summary>
-        /// <param name="region">Region.</param>
-		public void Exclude(Region region)
+		/// <summary>
+		/// Updates this Region to contain only the portion of its interior that does not intersect with the specified Region.
+		/// </summary>
+		/// <param name="region">Region.</param>
+		public void Exclude (Region region)
 		{
 
-			regionList.Add(new RegionEntry(RegionType.Path, region.solution, region.solution, RegionClipType.Difference));
+			regionList.Add (new RegionEntry (RegionType.Path, region.solution, region.solution, RegionClipType.Difference));
 			calculateRegionPath (ClipType.ctDifference);
 		}
 
-        /// <summary>
-        /// Updates this Region to contain only the portion of its interior that does not intersect with the specified GraphicsPath.
-        /// </summary>
-        /// <param name="path">Path.</param>
-        public void Exclude(GraphicsPath path)
-        {
-            var region = new Region(path);
-            Exclude(region);
-            region.Dispose();
-        }
+		/// <summary>
+		/// Updates this Region to contain only the portion of its interior that does not intersect with the specified GraphicsPath.
+		/// </summary>
+		/// <param name="path">Path.</param>
+		public void Exclude (GraphicsPath path)
+		{
+			var region = new Region (path);
+			Exclude (region);
+			region.Dispose ();
+		}
 
 		void calculateRegionPath (ClipType clipType)
 		{
@@ -626,18 +668,11 @@ namespace System.Drawing
 
 		}
 
-		internal RectangleF GetBounds()
-		{
+		internal RectangleF GetBounds() => regionBounds.ToRectangleF ();
 
-			return regionBounds;
-		}
-
-		internal bool IsInfinite 
+		public bool IsInfinite (Graphics g)
 		{
-			get 
-			{
-				return regionBounds.Equals (infinite);
-			}
+			return regionBounds.Equals (infinite);
 		}
 
 		public bool IsVisible(Point point)
@@ -657,10 +692,10 @@ namespace System.Drawing
 			return IsVisible ((RectangleF)rectangle);
 		}
 
-        public bool IsVisible(int x, int y, int width, int height)
-        {
-            return IsVisible(new RectangleF(x, y, width, height));
-        }
+		public bool IsVisible(int x, int y, int width, int height)
+		{
+		    return IsVisible(new RectangleF(x, y, width, height));
+		}
 
 		public bool IsVisible(float x, float y, float width, float height)
 		{
@@ -695,12 +730,9 @@ namespace System.Drawing
 			return regionPath.ContainsPoint (new CGPoint (x,y), EVEN_ODD_FILL);
 		}
 
-		internal bool IsEmpty
+		public bool IsEmpty (Graphics g)
 		{
-			get 
-			{
-				return regionBounds.Equals (RectangleF.Empty);
-			}
+			return regionPath.IsEmpty;
 		}
 
 		static Path RectangleToPath (RectangleF rect)
@@ -719,6 +751,19 @@ namespace System.Drawing
 		static PointF IntPointToPointF (IntPoint point)
 		{
 			return new PointF (point.X / scale, point.Y / scale);
+		}
+
+		public RectangleF [] GetRegionScans (Matrix matrix)
+		{
+			if (matrix == null)
+				throw new ArgumentNullException (nameof(matrix));
+			NotImplemented (MethodBase.GetCurrentMethod ());
+			return new RectangleF [] { this.GetBounds () };
+		}
+
+		static void NotImplemented (MethodBase methodBase)
+		{
+			System.Diagnostics.Debug.WriteLine ("Not implemented:" + methodBase.Name);
 		}
 	}
 

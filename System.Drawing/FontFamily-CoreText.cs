@@ -27,18 +27,9 @@
 //
 using System;
 using System.Drawing.Text;
-
-#if MONOMAC
-using AppKit;
 using Foundation;
 using CoreGraphics;
 using CoreText;
-#else
-using UIKit;
-using Foundation;
-using CoreGraphics;
-using CoreText;
-#endif
 
 namespace System.Drawing
 {
@@ -50,6 +41,8 @@ namespace System.Drawing
 		// Just because it ships does not mean we have to use it though.
 		const string SANS_SERIF = "Microsoft Sans Serif";  // "Arial";  or even "Helvetica";
 		const string SERIF = "Times New Roman";
+		const string SEMIBOLD_SUFFIX = " Semibold";
+
 
 		enum Metric
 		{
@@ -66,13 +59,15 @@ namespace System.Drawing
 			get { return nativeFontDescriptor; }
 		}
 
-		private void CreateNativeFontFamily(string name, bool createDefaultIfNotExists)
+		void CreateNativeFontFamily(string name, bool createDefaultIfNotExists)
 		{
 			CreateNativeFontFamily (name, null, createDefaultIfNotExists);
 		}
 
-		private void CreateNativeFontFamily(string name, FontCollection fontCollection, bool createDefaultIfNotExists)
+		void CreateNativeFontFamily(string extendedName, FontCollection fontCollection, bool createDefaultIfNotExists)
 		{
+			RemoveSemiboldSuffix(extendedName, out string name);
+
 			if (fontCollection != null) 
 			{
 				if (fontCollection.nativeFontDescriptors.ContainsKey (name))
@@ -104,13 +99,13 @@ namespace System.Drawing
 				if (string.IsNullOrEmpty (familyName)) 
 				{
 					var font = new CTFont (nativeFontDescriptor, 0);
-					familyName = font.FamilyName;
+					familyName = extendedName;
 				}
 			}
 
 		}
 
-		private bool NativeStyleAvailable(FontStyle style)
+		bool NativeStyleAvailable(FontStyle style)
 		{
 
 			// we are going to actually have to create a font object here
@@ -158,7 +153,7 @@ namespace System.Drawing
 			return false;
 		}
 
-		private int GetNativeMetric(Metric metric, FontStyle style)
+		int GetNativeMetric(Metric metric, FontStyle style)
 		{
 
 			// we are going to actually have to create a font object here
@@ -194,6 +189,18 @@ namespace System.Drawing
 			return 0;
 		}
 
+		// Semibold font hack support (the MS-Windows way)
+		internal static bool RemoveSemiboldSuffix(string name, out string plain)
+		{
+			if (name.EndsWith(SEMIBOLD_SUFFIX, StringComparison.InvariantCulture))
+			{
+				plain = name.Substring(0, name.Length - SEMIBOLD_SUFFIX.Length);
+				return true;
+			}
+
+			plain = name;
+			return false;
+		}
 	}
 }
 

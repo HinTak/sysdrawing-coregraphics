@@ -27,62 +27,103 @@
 //
 using System;
 
-#if MONOMAC
 using CoreGraphics;
 using CoreText;
-#else
-using CoreGraphics;
-using CoreText;
-#endif
+using Foundation;
 
 namespace System.Drawing
 {
 	public partial class Font
 	{
 		internal CTFont nativeFont;
-		bool bold = false;
-		bool italic = false;
 
+		internal static string PreferredLanguage {
+			get {
+				var languages = NSLocale.PreferredLanguages;
+				return languages.Length > 0 ? languages [0] : "en-US";
+			}
+		}
 
-		private void CreateNativeFont (FontFamily familyName, float emSize, FontStyle style,
-			GraphicsUnit unit, byte gdiCharSet, bool  gdiVerticalFont )
+		internal Font(CTFont font)
 		{
-			// convert to 96 Dpi to be consistent with Windows
-			var dpiSize = emSize * dpiScale;
+			var traits = font.GetTraits().SymbolicTraits.GetValueOrDefault();
+			fontFamily = new FontFamily(font.FamilyName, true);
+			fontStyle |= traits.HasFlag(CTFontSymbolicTraits.Bold) ? FontStyle.Bold : 0;
+			fontStyle |= traits.HasFlag(CTFontSymbolicTraits.Italic) ? FontStyle.Italic : 0;
+			gdiVerticalFont = false;
+			gdiCharSet = DefaultCharSet;
+			sizeInPoints = (float)(font.Size * 72f / 96f);
+			size = (float)font.Size;
+			unit = GraphicsUnit.Pixel;
+			nativeFont = font;
+		}
 
-			try 
-			{
-				nativeFont = new CTFont(familyName.NativeDescriptor,dpiSize);
-			}
-			catch
-			{
-				nativeFont = new CTFont("Helvetica",dpiSize);
-			}
-
-			CTFontSymbolicTraits tMask = CTFontSymbolicTraits.None;
-
-			if ((style & FontStyle.Bold) == FontStyle.Bold)
-				tMask |= CTFontSymbolicTraits.Bold;
-			if ((style & FontStyle.Italic) == FontStyle.Italic)
-				tMask |= CTFontSymbolicTraits.Italic;
-			strikeThrough = (style & FontStyle.Strikeout) == FontStyle.Strikeout;
-			underLine = (style & FontStyle.Underline) == FontStyle.Underline;
-
-			var nativeFont2 = nativeFont.WithSymbolicTraits(dpiSize,tMask,tMask);
-
-			if (nativeFont2 != null)
-				nativeFont = nativeFont2;
-
-			bold = (nativeFont.SymbolicTraits & CTFontSymbolicTraits.Bold) == CTFontSymbolicTraits.Bold; 
-			italic = (nativeFont.SymbolicTraits & CTFontSymbolicTraits.Italic) == CTFontSymbolicTraits.Italic;
-			sizeInPoints = emSize;
+		void CreateNativeFont(FontFamily family, float emSize, FontStyle style, GraphicsUnit unit, byte gdiCharSet, bool gdiVerticalFont)
+		{
+			this.sizeInPoints = ConversionHelpers.GraphicsUnitConversion(unit, GraphicsUnit.Point, 96f, emSize);
+			this.size = emSize;
 			this.unit = unit;
 
-			// FIXME
-			// I do not like the hard coded 72 but am just trying to boot strap the Font class right now
-			size = ConversionHelpers.GraphicsUnitConversion(GraphicsUnit.Point, unit, 72.0f, sizeInPoints); 
+			var size = sizeInPoints * 96f / 72f;
 
+			var traits = CTFontSymbolicTraits.None;
+			traits |= Bold ? CTFontSymbolicTraits.Bold : 0;
+			traits |= Italic ? CTFontSymbolicTraits.Italic : 0;
+
+			this.nativeFont = CTFontWithFamily(family, traits, size);
 		}
+
+		static CTFont CTFontWithFamily(FontFamily family, CTFontSymbolicTraits traits, float size)
+		{
+			// Semibold font hack
+			if (FontFamily.RemoveSemiboldSuffix(family.Name, out string familyName))
+			    if (CTFontWithFamilyName(familyName, traits, size, CTFontWeight.Semibold) is CTFont semibold)
+					return semibold;
+			
+			var	font = CTFontWithFamily(family, size);
+			var mask = (CTFontSymbolicTraits)uint.MaxValue;
+			var fontWithTraits = font.WithSymbolicTraits(size, traits, mask);
+			return fontWithTraits ?? font;
+		}
+
+		static CTFont CTFontWithFamily(FontFamily family, float size)
+		{
+			return IsFontInstalled(family.NativeDescriptor)
+				? new CTFont(family.NativeDescriptor, size)
+				: new CTFont(CTFontUIFontType.System, size, PreferredLanguage);
+		}
+		
+		static CTFont CTFontWithFamilyName(string family, CTFontSymbolicTraits straits, float size, float weight)
+		{
+			var bold = Math.Abs(weight - CTFontWeight.Bold) < 0.01f;
+			var traits = new NSMutableDictionary();
+
+			if (Math.Abs(weight) > 0.01 && !bold)
+				traits[CTFontTraitKey.Weight] = NSNumber.FromFloat(weight);
+
+			if (bold)
+				straits |= CTFontSymbolicTraits.Bold;
+
+			if (0 != (straits & (CTFontSymbolicTraits.Bold | CTFontSymbolicTraits.Italic)))
+				traits[CTFontTraitKey.Symbolic] = NSNumber.FromUInt32((UInt32)straits);
+
+			var attrs = new NSMutableDictionary();
+			attrs[CTFontDescriptorAttributeKey.FamilyName] = (NSString)family;
+			attrs[CTFontDescriptorAttributeKey.Traits] = traits;
+
+			var desc = new CTFontDescriptor(new CTFontDescriptorAttributes(attrs));
+			var font = new CTFont(desc, size);
+
+			return font;
+		}
+
+		static bool IsFontInstalled(CTFontDescriptor descriptor)
+		{
+			var matching = descriptor.GetMatchingFontDescriptors((NSSet)null);
+			return matching != null && matching.Length > 0;
+		}
+
+	
 
 		/**
 		 * 
@@ -102,20 +143,23 @@ namespace System.Drawing
 		 * 2355*(0.3/2048)*96 = 33.11719
 		 * 
 		 **/
-		private float GetNativeheight()
+		float GetNativeheight ()
 		{
-			// Documentation for Accessing Font Metrics
-			// http://developer.apple.com/library/ios/#documentation/StringsTextFonts/Conceptual/CoreText_Programming/Operations/Operations.html
-			float lineHeight = 0;
-			lineHeight += (float)nativeFont.AscentMetric;
-			lineHeight += (float)nativeFont.DescentMetric;
-			lineHeight += (float)nativeFont.LeadingMetric;
-
-
-			// Still have not figured this out yet!!!!
-			return lineHeight;
-
+			return (float)NMath.Ceiling(nativeFont.AscentMetric + nativeFont.DescentMetric + nativeFont.LeadingMetric + 1);
 		}
+
+		static class CTFontWeight
+		{
+			public const float UltraLight = -0.8f;
+			public const float Thin = -0.6f;
+			public const float Light = -0.4f;
+			public const float Regular = 0.0f;
+			public const float Medium = 0.23f;
+			public const float Semibold = 0.3f;
+			public const float Bold = 0.4f;
+			public const float Heavy = 0.56f;
+			public const float Black = 0.62f;
+		}		
 	}
 }
 

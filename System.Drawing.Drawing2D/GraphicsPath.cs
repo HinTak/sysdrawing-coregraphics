@@ -36,11 +36,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Diagnostics;
 using System.Linq;
-#if MONOMAC
 using CoreGraphics;
-#else
-using CoreGraphics;
-#endif
 using ClipperLib;
 
 namespace System.Drawing.Drawing2D {
@@ -447,7 +443,7 @@ namespace System.Drawing.Drawing2D {
 		public void AddEllipse (RectangleF rect)
 		{
 			const float C1 = 0.552285f;
-			const float C2 = 0.552285f;
+			//const float C2 = 0.552285f;
 			float rx = rect.Width / 2;
 			float ry = rect.Height / 2;
 			float cx = rect.X + rx;
@@ -1347,7 +1343,7 @@ namespace System.Drawing.Drawing2D {
 			types = cleared;
 		}
 
-		private PathPointType GetFirstPointType()
+		PathPointType GetFirstPointType()
 		{
 			/* check for a new figure flag or an empty path */ 
 			if (start_new_fig || (points.Count == 0))

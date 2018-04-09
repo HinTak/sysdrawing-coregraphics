@@ -8,17 +8,13 @@
 //
 using System;
 using System.Drawing.Drawing2D;
-#if MONOMAC
 using CoreGraphics;
-#else
-using CoreGraphics;
-#endif
 
 namespace System.Drawing {
 
 	public partial class SolidBrush : Brush {
 		Color color;
-		bool isModifiable;
+		internal bool isModifiable;
 		bool isModified;
 
 		public SolidBrush (Color color)
@@ -75,6 +71,16 @@ namespace System.Drawing {
 
 			// I am setting this to be used for Text coloring in DrawString
 			graphics.lastBrushColor = color;
+		}
+
+		public override bool Equals(object obj)
+		{
+			return (obj is SolidBrush sb) && color.Equals(sb.Color);
+		}
+
+		public override int GetHashCode ()
+		{
+			return color.GetHashCode ();
 		}
 	}
 }

@@ -7,16 +7,12 @@
 // Copyright 2011-2013 Xamarin Inc
 //
 using System;
-#if MONOMAC
 using CoreGraphics;
-#else
-using CoreGraphics;
-#endif
 
 namespace System.Drawing {
 
 	public abstract partial class Brush : MarshalByRefObject, IDisposable, ICloneable {
-		internal bool changed = true;
+		protected bool changed = true;
 		
 		~Brush ()
 		{
